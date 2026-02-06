@@ -95,7 +95,20 @@ fn main() {
     println!("cargo:rustc-link-lib=z");
 
     let mut build = cc::Build::new();
-    build.include("libpng").include("libz-sys/src/zlib");
+    build.include("libpng");
+    // Use DEP_Z_INCLUDE from libz-sys to find zlib headers.
+    // The upstream crate hardcodes "libz-sys/src/zlib" which is a git submodule
+    // not included in the published crate, breaking Windows MSVC builds.
+    if let Ok(z_include) = std::env::var("DEP_Z_INCLUDE") {
+        for path in z_include.split(',') {
+            build.include(path);
+        }
+    }
+    // On Windows, define ZLIB_STATIC so libpng uses static zlib symbols
+    // (avoids __imp_ DLL import link errors).
+    if std::env::var("CARGO_CFG_TARGET_OS").unwrap() == "windows" {
+        build.define("ZLIB_STATIC", None);
+    }
     build
         .file("libpng/png.c")
         .file("libpng/pngerror.c")
