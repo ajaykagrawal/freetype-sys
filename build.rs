@@ -72,6 +72,7 @@ fn main() {
             "cff/cff",
             "cid/type1cid",
             "gzip/ftgzip",
+            "hvf/hvf",
             "lzw/ftlzw",
             "pcf/pcf",
             "pfr/pfr",

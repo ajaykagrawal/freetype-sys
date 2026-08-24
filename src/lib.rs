@@ -8,6 +8,12 @@ use core::ffi::{c_char, c_int, c_long, c_short, c_uchar, c_uint, c_ulong, c_usho
 mod tt_tables;
 pub use crate::tt_tables::*;
 
+/// FreeType source revision carried by the `bundled` feature.
+pub const BUNDLED_FREETYPE_REVISION: &str = "656cb777798fa420a13faba3758779e9ed6c4798";
+
+/// FreeType version carried by the `bundled` feature.
+pub const BUNDLED_FREETYPE_VERSION: (FT_Int, FT_Int, FT_Int) = (2, 14, 3);
+
 // Basic Data Types
 pub type FT_Byte = c_uchar;
 pub type FT_Bytes = *const FT_Byte;
@@ -1049,6 +1055,12 @@ pub unsafe fn FT_HAS_COLOR(face: FT_Face) -> bool {
 extern "C" {
     pub fn FT_Init_FreeType(alibrary: *mut FT_Library) -> FT_Error;
     pub fn FT_Done_FreeType(library: FT_Library) -> FT_Error;
+    pub fn FT_Library_Version(
+        library: FT_Library,
+        amajor: *mut FT_Int,
+        aminor: *mut FT_Int,
+        apatch: *mut FT_Int,
+    );
     pub fn FT_Set_Default_Properties(library: FT_Library);
     pub fn FT_Property_Get(
         library: FT_Library,
@@ -1366,4 +1378,21 @@ extern "C" {
         acolor_index: *mut FT_UInt,
         iterator: *mut FT_LayerIterator,
     ) -> bool;
+}
+
+#[cfg(all(test, feature = "bundled"))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn bundled_library_reports_the_pinned_version() {
+        let mut library = std::ptr::null_mut();
+        assert_eq!(unsafe { FT_Init_FreeType(&mut library) }, 0);
+
+        let (mut major, mut minor, mut patch) = (0, 0, 0);
+        unsafe { FT_Library_Version(library, &mut major, &mut minor, &mut patch) };
+        assert_eq!((major, minor, patch), BUNDLED_FREETYPE_VERSION);
+
+        assert_eq!(unsafe { FT_Done_FreeType(library) }, 0);
+    }
 }
