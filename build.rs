@@ -11,6 +11,52 @@ fn add_sources(build: &mut cc::Build, root: &str, files: &[&str]) {
     build.include(root);
 }
 
+// MSVC pulls Skia's libpng objects as well as ours. Use libpng's own exported
+// and internal symbol lists so FreeType retains its PNG glyph decoder without
+// colliding with another bundled libpng (ipdf Windows native build).
+fn prefix_png() {
+    let out = std::path::PathBuf::from(env::var_os("OUT_DIR").unwrap());
+    let config = std::fs::read_to_string("libpng/scripts/pnglibconf.h.prebuilt").unwrap();
+    std::fs::write(out.join("pnglibconf.out"), &config).unwrap();
+    let symbols = |script: &str| {
+        let mut preprocessor = cc::Build::new();
+        preprocessor
+            .include("libpng")
+            .include(&out)
+            .define("ZLIB_STATIC", None);
+        if let Ok(paths) = env::var("DEP_Z_INCLUDE") {
+            for path in paths.split(',') {
+                preprocessor.include(path);
+            }
+        }
+        preprocessor.file(format!("libpng/scripts/{script}.c"));
+        let expanded = String::from_utf8(preprocessor.expand()).unwrap();
+        expanded
+            .split("PNG_DFN")
+            .skip(1)
+            .filter_map(|item| item.split('"').nth(2))
+            .map(str::trim)
+            .filter(|name| name.starts_with("png_"))
+            .map(|name| format!("#define {name} freetype_sys_{name}\n"))
+            .collect::<std::collections::BTreeSet<_>>()
+            .into_iter()
+            .collect::<String>()
+    };
+    let public = symbols("prefix");
+    let internal = symbols("intprefix");
+    let macros = std::fs::read_to_string("libpng/scripts/macro.lst")
+        .unwrap()
+        .split_whitespace()
+        .map(|name| format!("#define freetype_sys_png_{name} PNG_{name}\n"))
+        .collect::<String>();
+    std::fs::write(
+        "libpng/pnglibconf.h",
+        format!("{config}\n#define PNG_PREFIX freetype_sys_\n{public}{macros}"),
+    )
+    .unwrap();
+    std::fs::write("libpng/pngprefix.h", internal).unwrap();
+}
+
 fn main() {
     if !cfg!(feature = "bundled") {
         let target = env::var("TARGET").unwrap();
@@ -30,6 +76,10 @@ fn main() {
         "libpng/pnglibconf.h",
     )
     .unwrap();
+
+    if env::var("CARGO_CFG_TARGET_ENV").unwrap() == "msvc" {
+        prefix_png();
+    }
 
     let mut build = cc::Build::new();
 
